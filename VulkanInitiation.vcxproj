@@ -73,6 +73,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)extern\libs</AdditionalLibraryDirectories>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);vulkan\vulkan-1.lib;GLFW\glfw3.lib;</AdditionalDependencies>
+      <AdditionalOptions>/NODEFAULTLIB:glfw3.lib</AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
