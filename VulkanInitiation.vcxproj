@@ -73,7 +73,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalLibraryDirectories>$(ProjectDir)extern\libs</AdditionalLibraryDirectories>
       <AdditionalDependencies>$(CoreLibraryDependencies);%(AdditionalDependencies);vulkan\vulkan-1.lib;GLFW\glfw3.lib;</AdditionalDependencies>
-      <AdditionalOptions>/NODEFAULTLIB:glfw3.lib</AdditionalOptions>
+      <AdditionalOptions></AdditionalOptions>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -103,7 +103,7 @@
     <Folder Include="include" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="src\VulkanInitiation.cpp">
+    <ClCompile Include="src\main.cpp">
       <RuntimeLibrary>MultiThreadedDebugDll</RuntimeLibrary>
       <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
       <Optimization>Disabled</Optimization>
