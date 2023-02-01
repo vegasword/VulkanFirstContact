@@ -6,6 +6,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
+#include <vector>
+
+typedef uint32_t u32;
 
 class Application
 {
@@ -54,13 +57,30 @@ private:
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
-        
-        uint32_t glfwExtensionCount = 0;
+
+        // Get and count the available extensions from the Vulkan instance
+        u32 extensionCount = 0;
+        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, nullptr);
+        std::vector<VkExtensionProperties> extensions(extensionCount);
+        vkEnumerateInstanceExtensionProperties(nullptr, &extensionCount, extensions.data());
+
+        // Check the required extensions for GLFW
+        u32 glfwExtensionCount = 0;
         const char** glfwExtensions;
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
+        u32 counter = 0;
+        for (u32 i = 0; i < glfwExtensionCount; i++)
+            for (u32 j = 0; j < extensionCount; j++)
+                if (strcmp(glfwExtensions[i], extensions[j].extensionName) == 0)
+                    counter++;
+        if (counter != glfwExtensionCount)
+            throw std::runtime_error((std::string)glfwExtensions[counter] + "is not supported");
+
+        // Send GLFW extensions
         createInfo.enabledExtensionCount = glfwExtensionCount;
         createInfo.ppEnabledExtensionNames = glfwExtensions;
+        
         createInfo.enabledLayerCount = 0;
 
         // We finally create the Vulkan instance.
@@ -86,6 +106,7 @@ private:
 
     void cleanup()
     {
+        vkDestroyInstance(vkInstance, nullptr);
         glfwDestroyWindow(window);
         glfwTerminate();
     }
