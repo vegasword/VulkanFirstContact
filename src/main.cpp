@@ -41,6 +41,21 @@ private:
         window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
     }
 
+    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
+    {
+        createInfo = {};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
+        createInfo.messageSeverity = 
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
+            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
+        createInfo.messageType = 
+            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
+            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
+            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
+        createInfo.pfnUserCallback = debugCallback;
+    }
+
     void createInstance()
     {
         // Temporary redundant variables
@@ -86,7 +101,6 @@ private:
         std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
 #ifdef _DEBUG
         extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-        std::cout << "yep" << std::endl;
 #endif
         const u32 extensionsCount = static_cast<u32>(extensions.size());
         
@@ -113,6 +127,15 @@ private:
          *  recommended to enable validation layers at devices level as well
          *  for compatibility, which is required by some implementations.
          */
+        
+        /*
+         * This variable is placed outside the if statement to ensure that it 
+         * is not destroyed before the vkCreateInstance call. By creating an 
+         * additional debug messenger this way it will automatically be used 
+           during vkCreateInstance and vkDestroyInstance and cleaned up after that.
+        */
+        VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
+
 #ifdef _DEBUG
         // Get and count the available layers  from the Vulkan instance
         u32 layerCount;
@@ -132,8 +155,13 @@ private:
 
         createInfo.enabledLayerCount = validationLayerCount;
         createInfo.ppEnabledLayerNames = validationLayers.data();
+
+        // Create the debug messenger context
+        populateDebugMessengerCreateInfo(debugCreateInfo);
+        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
 #else
         createInfo.enabledLayerCount = 0;
+        createInfo.pNext = nullptr;
 #endif
         
         // We finally create the Vulkan instance.
@@ -145,17 +173,7 @@ private:
     {
         // Specifies details about the debug messenger and its callback.
         VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity =
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType =
-            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        createInfo.pfnUserCallback = debugCallback;
-        createInfo.pUserData = nullptr;
+        populateDebugMessengerCreateInfo(createInfo);
 
         if (CreateDebugUtilsMessengerEXT(vkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
             throw std::runtime_error("Failed to set up debug messenger!");
@@ -192,9 +210,11 @@ private:
 int main() {
     Application app;
 
-    try {
+    try
+    {
         app.run();
-    } catch (const std::exception& e) {
+    } catch (const std::exception& e)
+    {
         std::cerr << e.what() << std::endl;
         return EXIT_FAILURE;
     }

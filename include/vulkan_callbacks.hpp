@@ -6,25 +6,7 @@ VkDebugUtilsMessageTypeFlagsEXT messageType,
 const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
 void* pUserData)
 {
-    switch (messageSeverity)
-    {
-        default:
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT:
-            std::cout << pCallbackData->pMessage << std::endl;
-            break;
-        
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT:
-            std::cout << "INFO:" << pCallbackData->pMessage << std::endl;
-            break;
-
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT:
-            std::cerr << "WARNING: " << pCallbackData->pMessage << std::endl;
-            break;
-
-        case VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT:
-            std::cerr << "ERROR: " << pCallbackData->pMessage << std::endl;
-            break;
-    }
+    std::cerr << pCallbackData->pMessage << std::endl;
     return VK_FALSE;
 }
 
