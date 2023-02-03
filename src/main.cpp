@@ -1,12 +1,15 @@
+#define VK_USE_PLATFORM_WIN32_KHR
 #include <vulkan/vulkan.h>
-
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
 
 #include <iostream>
 #include <stdexcept>
 #include <cstdlib>
 #include <vector>
+#include <set>
 
 #include "vulkan_callbacks.hpp"
 
@@ -24,22 +27,28 @@ public:
     }
 
 private:
-    GLFWwindow* window;
-
-    // Vulkan initialization members
+    // Instancing
     VkInstance instance;
     VkApplicationInfo appInfo{};
     VkDebugUtilsMessengerEXT debugMessenger;
 
-    // Vulkan devices and queues members
+    // Devices
     VkPhysicalDevice physicalDevice;
-    u32 physicalDeviceQueueFamily;
     VkDevice logicalDevice;
+
+    // Queues
+    u32 graphicsFamily;
     VkQueue graphicsQueue;
+    u32 presentFamily;
+    VkQueue presentQueue;
+
+    // Windowing and rendering
+    GLFWwindow* window;
+    VkSurfaceKHR surface;
 
 #ifdef _DEBUG
     u32 validationLayerCount = 0;
-    const std::vector<const  char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
+    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 #endif
     
     void initWindow()
@@ -178,6 +187,17 @@ private:
             throw std::runtime_error("Failed to set up debug messenger!");
     }
     
+    void createSurface()
+    {
+        VkWin32SurfaceCreateInfoKHR createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
+        createInfo.hwnd = glfwGetWin32Window(window);
+        createInfo.hinstance = GetModuleHandle(nullptr);
+
+        if (vkCreateWin32SurfaceKHR(instance, &createInfo, nullptr, &surface) != VK_SUCCESS)
+            throw std::runtime_error("failed to create window surface!");
+    }
+
     bool isPhysicalDeviceSuitable(VkPhysicalDevice device)
     {
         // Get physical device hardware properties and Vulkan compatibility
@@ -207,16 +227,21 @@ private:
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
-        
-        physicalDeviceQueueFamily = -1;
+      
+        graphicsFamily = presentFamily = -1;
         for (int i = 0; i < queueFamilyCount; i++)
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
-                physicalDeviceQueueFamily = i;
+                graphicsFamily = i;
+
+                VkBool32 presentSupport = false;
+                vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &presentSupport);
+                if (presentSupport) presentFamily = i;
+
                 break;
             }
         
-        return validProperties && requiredFeatures && physicalDeviceQueueFamily != -1;
+        return validProperties && requiredFeatures && graphicsFamily != -1 && presentFamily != -1;
     }
 
     void pickPhysicalDevice()
@@ -246,9 +271,8 @@ private:
     void createLogicalDevice()
     {
         VkDeviceQueueCreateInfo queueCreateInfo{};
-        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-        queueCreateInfo.queueFamilyIndex = physicalDeviceQueueFamily;
-        queueCreateInfo.queueCount = 1;
+        std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+        std::set<u32> uniqueQueueFamilies = { graphicsFamily, presentFamily };
         
         /* (About queue parallelization)
         * We can assign priorities to queues to influence the scheduling of 
@@ -256,6 +280,16 @@ private:
         */
         float queuePriority = 1.0f;
         queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        for (u32 queueFamiliy : uniqueQueueFamilies)
+        {
+            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+            queueCreateInfo.queueFamilyIndex = queueFamiliy;
+            queueCreateInfo.queueCount = 1;
+            queueCreateInfo.pQueuePriorities = &queuePriority;
+            queueCreateInfos.push_back(queueCreateInfo);
+        }
 
         VkPhysicalDeviceFeatures deviceFeatures{};
 
@@ -267,9 +301,11 @@ private:
         createInfo.enabledExtensionCount = 0;
 
 #ifdef _DEBUG
-        // Even if Vulkan no longer make a distinction between instance and
-        // device specific validation layers, it's still a good idea to set
-        // those properties anyway.
+        /*
+        * Even if Vulkan no longer make a distinction between instance and
+        * device specific validation layers, it's still a good idea to set
+        * those properties anyway.
+        */
         createInfo.enabledLayerCount = validationLayerCount;
         createInfo.ppEnabledLayerNames = validationLayers.data();
 #else
@@ -278,7 +314,8 @@ private:
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS)
             throw std::runtime_error("Failed to create logical device");
 
-        vkGetDeviceQueue(logicalDevice, physicalDeviceQueueFamily, 0, &graphicsQueue);
+        vkGetDeviceQueue(logicalDevice, graphicsFamily, 0, &graphicsQueue);
+        vkGetDeviceQueue(logicalDevice, presentFamily, 0, &presentQueue);
     }
 
     void initVulkan()
@@ -288,6 +325,16 @@ private:
 #ifdef _DEBUG
         setupDebugMessenger();
 #endif
+
+        /*
+        * To establish the connection between Vulkan and the window system to 
+        * present results to the screen, we need to use the Window System
+        * Integration extensions. We'll use a surface object to present 
+        * rendered images to. The surface in our program will be backed by the 
+        * window that we've already opened with GLFW.
+        */
+
+        createSurface();
 
         // Vulkan separates the concept of physical and logical devices.
         
@@ -319,6 +366,7 @@ private:
 #ifdef _DEBUG
         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 #endif
+        vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(window);
         glfwTerminate();
