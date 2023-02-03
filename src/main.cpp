@@ -26,11 +26,17 @@ public:
 private:
     GLFWwindow* window;
 
-    VkInstance vkInstance;
+    // Vulkan initialization members
+    VkInstance instance;
+    VkApplicationInfo appInfo{};
     VkDebugUtilsMessengerEXT debugMessenger;
 
+    // Vulkan devices and queues members
+    VkPhysicalDevice physicalDevice;
+    VkDevice logicalDevice;
+
 #ifdef _DEBUG
-    const std::vector<const  char*> validationLayers = {"VK_LAYER_KHRONOS_validation"};
+    const std::vector<const  char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 #endif
     
     void initWindow()
@@ -62,11 +68,10 @@ private:
         u32 counter = 0;
         
         // Metadata of the application (mostly use by the driver for config).
-        VkApplicationInfo appInfo{};
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "Hello Triangle";
+        appInfo.pApplicationName = "Hello again to all my friends";
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName = "No Engine";
+        appInfo.pEngineName = "Real Engine";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
 
@@ -116,14 +121,14 @@ private:
         createInfo.enabledExtensionCount = extensionsCount;
         createInfo.ppEnabledExtensionNames = extensions.data();
 
-        /* (Validation layers)
+        /* (About validation layers)
          * There are two different types of validation layers:
          * - Instance layers only checking calls related to global Vulkan
          *   objects like instances
          * - Device specific layers checking only calls related to a specific
          *   GPU.
          *
-         *  Even if device specific layers have now been deprecated, it sill
+         *  Even if device specific layers have now been deprecated, it still
          *  recommended to enable validation layers at devices level as well
          *  for compatibility, which is required by some implementations.
          */
@@ -165,7 +170,7 @@ private:
 #endif
         
         // We finally create the Vulkan instance.
-        if (vkCreateInstance(&createInfo, nullptr, &vkInstance) != VK_SUCCESS)
+        if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan instance");
     }
 
@@ -175,16 +180,102 @@ private:
         VkDebugUtilsMessengerCreateInfoEXT createInfo{};
         populateDebugMessengerCreateInfo(createInfo);
 
-        if (CreateDebugUtilsMessengerEXT(vkInstance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
+        if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
             throw std::runtime_error("Failed to set up debug messenger!");
     }
     
+
+
+    bool isPhysicalDeviceSuitable(VkPhysicalDevice device)
+    {
+        // Get physical device hardware properties and Vulkan compatibility
+        VkPhysicalDeviceProperties deviceProperties;
+        vkGetPhysicalDeviceProperties(device, &deviceProperties);
+
+        // I want to choose a compatible and a not integrated GPU
+        bool validProperties =
+            deviceProperties.apiVersion >= appInfo.apiVersion &&
+            deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
+
+        // Get the optional features and shaders compatibilities
+        VkPhysicalDeviceFeatures deviceFeatures;
+        vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
+        bool requiredFeatures = deviceFeatures.geometryShader;
+
+        /* (About queue families)
+        * It has been briefly touched upon before that almost every operation in 
+        * Vulkan, anything from drawing to uploading textures, requires commands 
+        * to be submitted to a queue. There are different types of queues that 
+        * originate from different queue families and each family of queues allows
+        * only a subset of commands.
+        */ 
+
+        // Check supported queues
+        u32 queueFamilyCount = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
+        std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
+        vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
+        
+        int indices = -1;
+        for (int i = 0; i < queueFamilyCount; i++)
+            if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+            {
+                indices = i;
+                break;
+            }
+        
+        return validProperties && requiredFeatures && indices != -1;
+    }
+
+    void pickPhysicalDevice()
+    {       
+        // Listing the GPUs
+        u32 deviceCount = 0;
+        vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
+        if (deviceCount <= 0)
+            throw std::runtime_error("Failed to find GPUs with Vulkan support");
+        std::vector<VkPhysicalDevice> devices(deviceCount);
+        vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
+
+        // Check devices suitability
+        for (const auto& device : devices)
+        {
+            if (isPhysicalDeviceSuitable(device))
+            {
+                physicalDevice = device;
+                break;
+            }
+        }
+
+        if (physicalDevice == VK_NULL_HANDLE)
+            throw std::runtime_error("Failed to find a suitable GPU");
+    }
+
+    void createLogicalDevice()
+    {
+        //TODO(vegasword): https://vulkan-tutorial.com/en/Drawing_a_triangle/Setup/Logical_device_and_queues
+    }
+
     void initVulkan()
     {
         createInstance();
+
 #ifdef _DEBUG
         setupDebugMessenger();
 #endif
+
+        /* (About devices and queues)
+        * Vulkan separates the concept of physical and logical devices.
+        * 
+        * A physical device usually represents a single complete implementation 
+        * of Vulkan (excluding instance-level functionality) available to the host,
+        * of which there are a finite number.
+        * 
+        * A logical device represents an instance of that implementation with its
+        * own state and resources independent of other logical devices.
+        */
+        pickPhysicalDevice();
+        createLogicalDevice();
     }
 
     void mainLoop()
@@ -198,9 +289,9 @@ private:
     void cleanup()
     {
 #ifdef _DEBUG
-        DestroyDebugUtilsMessengerEXT(vkInstance, debugMessenger, nullptr);
+        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 #endif
-        vkDestroyInstance(vkInstance, nullptr);
+        vkDestroyInstance(instance, nullptr);
         
         glfwDestroyWindow(window);
         glfwTerminate();
@@ -213,9 +304,9 @@ int main() {
     try
     {
         app.run();
-    } catch (const std::exception& e)
+    } catch (const std::exception& exception)
     {
-        std::cerr << e.what() << std::endl;
+        std::cerr << exception.what() << std::endl;
         return EXIT_FAILURE;
     }
 
