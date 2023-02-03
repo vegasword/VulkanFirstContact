@@ -33,9 +33,12 @@ private:
 
     // Vulkan devices and queues members
     VkPhysicalDevice physicalDevice;
+    u32 physicalDeviceQueueFamily;
     VkDevice logicalDevice;
+    VkQueue graphicsQueue;
 
 #ifdef _DEBUG
+    u32 validationLayerCount = 0;
     const std::vector<const  char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 #endif
     
@@ -69,22 +72,31 @@ private:
         
         // Metadata of the application (mostly use by the driver for config).
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "Hello again to all my friends";
+        appInfo.pApplicationName = "Vulkan Template";
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName = "Real Engine";
+        appInfo.pEngineName = "Vulkan Template";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_0;
 
         /* (Instance / VkInstanceCreateInfo)
-         * Tells Vulkan driver which global extensions and validations layers
+         * Tells Vulkan driver which global extensions and validation layers
          * we want to use.
          *
          * Global extensions are a set of additional Vulkan features.
          *
-         * Validations layers are optional components that hook into Vulkan
+         * Validation layers are optional components that hook into Vulkan
          * function calls to apply additional operations like checking the
          * values of parameters against the specification to detect misuse or
          * the thread safety...
+         * There are two different types of validation layers:
+         * - Instance layers only checking calls related to global Vulkan
+         *   objects like instances
+         * - Device specific layers checking only calls related to a specific
+         *   GPU.
+         *
+         *  Even if device specific layers have now been deprecated, it still
+         *  recommended to enable validation layers at devices level as well
+         *  for compatibility, which is required by some implementations.
         */
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -121,28 +133,10 @@ private:
         createInfo.enabledExtensionCount = extensionsCount;
         createInfo.ppEnabledExtensionNames = extensions.data();
 
-        /* (About validation layers)
-         * There are two different types of validation layers:
-         * - Instance layers only checking calls related to global Vulkan
-         *   objects like instances
-         * - Device specific layers checking only calls related to a specific
-         *   GPU.
-         *
-         *  Even if device specific layers have now been deprecated, it still
-         *  recommended to enable validation layers at devices level as well
-         *  for compatibility, which is required by some implementations.
-         */
-        
-        /*
-         * This variable is placed outside the if statement to ensure that it 
-         * is not destroyed before the vkCreateInstance call. By creating an 
-         * additional debug messenger this way it will automatically be used 
-           during vkCreateInstance and vkDestroyInstance and cleaned up after that.
-        */
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
 
 #ifdef _DEBUG
-        // Get and count the available layers  from the Vulkan instance
+        // Get and count the available validation layers from the Vulkan instance
         u32 layerCount;
         vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
         std::vector<VkLayerProperties> availableLayers(layerCount);
@@ -150,7 +144,7 @@ private:
 
         // Check if all of the layers are available
         counter = 0;
-        u32 validationLayerCount = static_cast<u32>(validationLayers.size());
+        validationLayerCount = static_cast<u32>(validationLayers.size());
         for (const char* layerName : validationLayers)
             for (const VkLayerProperties& layerProperties : availableLayers)
                 if (strcmp(layerName, layerProperties.layerName) == 0)
@@ -184,8 +178,6 @@ private:
             throw std::runtime_error("Failed to set up debug messenger!");
     }
     
-
-
     bool isPhysicalDeviceSuitable(VkPhysicalDevice device)
     {
         // Get physical device hardware properties and Vulkan compatibility
@@ -210,21 +202,21 @@ private:
         * only a subset of commands.
         */ 
 
-        // Check supported queues
+        // Check supported queues by the physical device
         u32 queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, queueFamilies.data());
         
-        int indices = -1;
+        physicalDeviceQueueFamily = -1;
         for (int i = 0; i < queueFamilyCount; i++)
             if (queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
             {
-                indices = i;
+                physicalDeviceQueueFamily = i;
                 break;
             }
         
-        return validProperties && requiredFeatures && indices != -1;
+        return validProperties && requiredFeatures && physicalDeviceQueueFamily != -1;
     }
 
     void pickPhysicalDevice()
@@ -253,7 +245,40 @@ private:
 
     void createLogicalDevice()
     {
-        //TODO(vegasword): https://vulkan-tutorial.com/en/Drawing_a_triangle/Setup/Logical_device_and_queues
+        VkDeviceQueueCreateInfo queueCreateInfo{};
+        queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        queueCreateInfo.queueFamilyIndex = physicalDeviceQueueFamily;
+        queueCreateInfo.queueCount = 1;
+        
+        /* (About queue parallelization)
+        * We can assign priorities to queues to influence the scheduling of 
+        * command buffer execution using floating point numbers between 0.0 and 1.0.
+        */
+        float queuePriority = 1.0f;
+        queueCreateInfo.pQueuePriorities = &queuePriority;
+
+        VkPhysicalDeviceFeatures deviceFeatures{};
+
+        VkDeviceCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+        createInfo.pQueueCreateInfos = &queueCreateInfo;
+        createInfo.queueCreateInfoCount = 1;
+        createInfo.pEnabledFeatures = &deviceFeatures;
+        createInfo.enabledExtensionCount = 0;
+
+#ifdef _DEBUG
+        // Even if Vulkan no longer make a distinction between instance and
+        // device specific validation layers, it's still a good idea to set
+        // those properties anyway.
+        createInfo.enabledLayerCount = validationLayerCount;
+        createInfo.ppEnabledLayerNames = validationLayers.data();
+#else
+        createInfo.enabledLayerCount = 0;
+#endif
+        if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create logical device");
+
+        vkGetDeviceQueue(logicalDevice, physicalDeviceQueueFamily, 0, &graphicsQueue);
     }
 
     void initVulkan()
@@ -264,17 +289,19 @@ private:
         setupDebugMessenger();
 #endif
 
-        /* (About devices and queues)
-        * Vulkan separates the concept of physical and logical devices.
-        * 
+        // Vulkan separates the concept of physical and logical devices.
+        
+        /* 
         * A physical device usually represents a single complete implementation 
         * of Vulkan (excluding instance-level functionality) available to the host,
         * of which there are a finite number.
-        * 
+        */
+        pickPhysicalDevice();
+
+        /* 
         * A logical device represents an instance of that implementation with its
         * own state and resources independent of other logical devices.
         */
-        pickPhysicalDevice();
         createLogicalDevice();
     }
 
@@ -288,11 +315,11 @@ private:
 
     void cleanup()
     {
+        vkDestroyDevice(logicalDevice, nullptr);
 #ifdef _DEBUG
         DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
 #endif
         vkDestroyInstance(instance, nullptr);
-        
         glfwDestroyWindow(window);
         glfwTerminate();
     }
