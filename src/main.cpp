@@ -283,7 +283,7 @@ private:
 
         for (u32 queueFamiliy : uniqueQueueFamilies)
         {
-            VkDeviceQueueCreateInfo queueCreateInfo{};
+            queueCreateInfo = {};
             queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
             queueCreateInfo.queueFamilyIndex = queueFamiliy;
             queueCreateInfo.queueCount = 1;
