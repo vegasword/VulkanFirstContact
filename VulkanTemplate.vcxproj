@@ -159,6 +159,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="include\inlined_math.hpp" />
     <ClInclude Include="include\vulkan_callbacks.hpp" />
   </ItemGroup>
   <ItemGroup>
