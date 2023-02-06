@@ -31,7 +31,6 @@ private:
     // Instancing
     VkInstance instance;
     VkApplicationInfo appInfo{};
-    VkDebugUtilsMessengerEXT debugMessenger;
 
     // Devices
     VkPhysicalDevice physicalDevice;
@@ -71,21 +70,6 @@ private:
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
-    }
-
-    void populateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT& createInfo)
-    {
-        createInfo = {};
-        createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
-        createInfo.messageSeverity = 
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_VERBOSE_BIT_EXT | 
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT | 
-            VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-        createInfo.messageType = 
-            VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT | 
-            VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT | 
-            VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-        createInfo.pfnUserCallback = debugCallback;
     }
 
     void createInstance()
@@ -139,9 +123,7 @@ private:
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
 
         std::vector<const char*> extensions(glfwExtensions, glfwExtensions + glfwExtensionCount);
-#ifdef _DEBUG
-        extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-#endif
+
         const u32 extensionsCount = static_cast<u32>(extensions.size());
         
         for (u32 i = 0; i < extensionsCount; i++)
@@ -158,47 +140,12 @@ private:
 
         VkDebugUtilsMessengerCreateInfoEXT debugCreateInfo{};
 
-#ifdef _DEBUG
-        // Get and count the available validation layers from the Vulkan instance
-        u32 layerCount;
-        vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
-        std::vector<VkLayerProperties> availableLayers(layerCount);
-        vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
-
-        // Check if all of the layers are available
-        counter = 0;
-        validationLayerCount = static_cast<u32>(validationLayers.size());
-        for (const char* layerName : validationLayers)
-            for (const VkLayerProperties& layerProperties : availableLayers)
-                if (strcmp(layerName, layerProperties.layerName) == 0)
-                    counter++;
-        if (counter != validationLayerCount)
-            throw std::runtime_error("The specified validation layers is not available");
-
-        createInfo.enabledLayerCount = validationLayerCount;
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-
-        // Create the debug messenger context
-        populateDebugMessengerCreateInfo(debugCreateInfo);
-        createInfo.pNext = (VkDebugUtilsMessengerCreateInfoEXT*) &debugCreateInfo;
-#else
         createInfo.enabledLayerCount = 0;
         createInfo.pNext = nullptr;
-#endif
         
         // We finally create the Vulkan instance.
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan instance");
-    }
-
-    void setupDebugMessenger()
-    {
-        // Specifies details about the debug messenger and its callback.
-        VkDebugUtilsMessengerCreateInfoEXT createInfo{};
-        populateDebugMessengerCreateInfo(createInfo);
-
-        if (CreateDebugUtilsMessengerEXT(instance, &createInfo, nullptr, &debugMessenger) != VK_SUCCESS)
-            throw std::runtime_error("Failed to set up debug messenger!");
     }
     
     void createSurface()
@@ -273,16 +220,14 @@ private:
         {
             vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device, surface, &supportedSurfaceCapabilities);
 
-            //TODO(vegasword): Fix unfilled supported surface formats and present modes
-
             u32 surfaceFormatCount = 0;
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &surfaceFormatCount, nullptr);
-            supportedSurfaceFormats.reserve(surfaceFormatCount);
+            supportedSurfaceFormats.resize(surfaceFormatCount);
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &surfaceFormatCount, supportedSurfaceFormats.data());
 
             u32 presentModeCount = 0;
             vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
-            supportedPresentModes.reserve(presentModeCount);
+            supportedPresentModes.resize(presentModeCount);
             vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, supportedPresentModes.data());
 
             swapChainAdequate = surfaceFormatCount != 0 && presentModeCount != 0;
@@ -530,10 +475,6 @@ private:
     {
         createInstance();
 
-#ifdef _DEBUG
-        setupDebugMessenger();
-#endif
-
         /*
         * To establish the connection between Vulkan and the window system to 
         * present results to the screen, we need to use the Window System
@@ -576,9 +517,6 @@ private:
     {
         vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
         vkDestroyDevice(logicalDevice, nullptr);
-#ifdef _DEBUG
-        DestroyDebugUtilsMessengerEXT(instance, debugMessenger, nullptr);
-#endif
         vkDestroySurfaceKHR(instance, surface, nullptr);
         vkDestroyInstance(instance, nullptr);
         glfwDestroyWindow(window);
