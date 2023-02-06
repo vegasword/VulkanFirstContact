@@ -35,7 +35,7 @@ private:
     // Devices
     VkPhysicalDevice physicalDevice;
     VkDevice logicalDevice;
-    const std::vector<const char*> deviceExtensions = { "VK_KHR_swapchain" /*"VK_KHR_SWAPCHAIN_EXTENSION_NAME"*/ };
+    const std::vector<const char*> deviceExtensions = { "VK_KHR_swapchain" };
 
     // Queues
     u32 graphicsFamily;
@@ -47,12 +47,6 @@ private:
     GLFWwindow* window;
     VkSurfaceKHR surface;
 
-#ifdef _DEBUG
-    // Validation layers
-    u32 validationLayerCount = 0;
-    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
-#endif
-
     // Swap Chain
     VkSurfaceCapabilitiesKHR supportedSurfaceCapabilities;
     std::vector<VkSurfaceFormatKHR> supportedSurfaceFormats;
@@ -60,6 +54,7 @@ private:
 
     VkSwapchainKHR swapChain;
     std::vector<VkImage> swapChainImages;
+    std::vector<VkImageView> swapChainImageViews;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
 
@@ -297,18 +292,8 @@ private:
         createInfo.pEnabledFeatures = &deviceFeatures;
         createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
         createInfo.ppEnabledExtensionNames = deviceExtensions.data();
-
-#ifdef _DEBUG
-        /*
-        * Even if Vulkan no longer make a distinction between instance and
-        * device specific validation layers, it's still a good idea to set
-        * those properties anyway.
-        */
-        createInfo.enabledLayerCount = validationLayerCount;
-        createInfo.ppEnabledLayerNames = validationLayers.data();
-#else
         createInfo.enabledLayerCount = 0;
-#endif
+
         if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &logicalDevice) != VK_SUCCESS)
             throw std::runtime_error("Failed to create logical device");
 
@@ -471,8 +456,43 @@ private:
         swapChainExtent = swapExtent;
     }
 
+    void createImageViews()
+    {
+        size_t swapChainImageSize = swapChainImages.size();
+        swapChainImageViews.resize(swapChainImageSize);
+        for (size_t i = 0; i < swapChainImageSize; i++)
+        {
+            VkImageViewCreateInfo createInfo{};
+            createInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            createInfo.image = swapChainImages[i];
+            createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            createInfo.format = swapChainImageFormat;
+
+            // The components field allows us to swizzle the color channels around. 
+            createInfo.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            createInfo.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+            // The subresourceRange field describes what the image's purpose is 
+            // and which part of the image should be accessed.
+            createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            createInfo.subresourceRange.baseMipLevel = 0;
+            createInfo.subresourceRange.levelCount = 1;
+            createInfo.subresourceRange.baseArrayLayer = 0;
+            createInfo.subresourceRange.layerCount = 1;
+
+            if (vkCreateImageView(logicalDevice, &createInfo, nullptr, &swapChainImageViews[i]) != VK_SUCCESS)
+                throw std::runtime_error("Failed to create image views");
+        }
+    }
+
     void initVulkan()
     {
+        /*
+        * The instance is the connection between the application and the Vulkan
+        * library depending on the GPU driver configuration.
+        */
         createInstance();
 
         /*
@@ -503,6 +523,14 @@ private:
         * synchronize the presentation of images with the refresh rate of the screen.
         */
         createSwapChain();
+
+        /*
+        * An image view is quite literally a view into an image. It describes 
+        * how to access the image and which part of the image to access, for
+        * example if it should be treated as a 2D texture depth texture without
+        * any mipmapping levels.
+        */
+        createImageViews();
     }
 
     void mainLoop()
@@ -515,6 +543,8 @@ private:
 
     void cleanup()
     {
+        for (auto imageView : swapChainImageViews)
+            vkDestroyImageView(logicalDevice, imageView, nullptr);
         vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);
         vkDestroyDevice(logicalDevice, nullptr);
         vkDestroySurfaceKHR(instance, surface, nullptr);
