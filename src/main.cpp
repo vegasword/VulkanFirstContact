@@ -11,8 +11,8 @@
 #include <vector>
 #include <set>
 
-#include "vulkan_callbacks.hpp"
-#include "inlined_math.hpp"
+#include "my_math.hpp"
+#include "my_utils.hpp"
 
 typedef uint32_t u32;
 
@@ -57,6 +57,11 @@ private:
     std::vector<VkImageView> swapChainImageViews;
     VkFormat swapChainImageFormat;
     VkExtent2D swapChainExtent;
+
+    // Graphics pipeline
+    VkRenderPass renderPass;
+    VkPipeline graphicsPipeline;
+    VkPipelineLayout pipelineLayout;
 
         
     void initWindow()
@@ -487,6 +492,224 @@ private:
         }
     }
 
+    VkShaderModule createShaderModule(const std::vector<char>& code)
+    {
+        VkShaderModuleCreateInfo createInfo{};
+        createInfo.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        createInfo.codeSize = code.size();
+        createInfo.pCode = reinterpret_cast<const u32*>(code.data());
+
+        // The shader module is an object wrapping shader code.
+        VkShaderModule shaderModule;
+        if (vkCreateShaderModule(logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create shader module");
+        return shaderModule;
+    }
+
+    void createGraphicsPipeline()
+    {
+        auto vertShaderCode = readFile("data/vert.spv");
+        auto fragShaderCode = readFile("data/frag.spv");
+
+        VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
+        VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
+
+        // Assign the vertex and fragment shader to its pipeline stage
+        VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
+        vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        vertShaderStageInfo.module = vertShaderModule;
+        vertShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragShaderModule;
+        fragShaderStageInfo.pName = "main";
+
+        VkPipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+        vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+        vertexInputInfo.vertexBindingDescriptionCount = 0;
+        vertexInputInfo.vertexAttributeDescriptionCount = 0;
+
+        /*
+        * The input assembler collects the raw vertex data from the buffers you
+        * specify and may also use an index buffer to repeat certain elements
+        * without having to duplicate the vertex data itself.
+        */
+        VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+        inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+        inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+        inputAssembly.primitiveRestartEnable = VK_FALSE;
+
+        /*
+        * A viewport basically describes the region of the framebuffer that the 
+        * output will be rendered to. While viewports define the transformation 
+        * from the image to the framebuffer, scissor rectangles define in which 
+        * regions pixels will actually be stored.
+        */
+        VkPipelineViewportStateCreateInfo viewportState{};
+        viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+        viewportState.viewportCount = 1;
+        viewportState.scissorCount = 1;
+
+        /*
+        * The rasterization stage discretizes the primitives into fragments. 
+        * These are the pixel elements that they fill on the framebuffer.
+        * Any fragments that fall outside the screen are discarded and the 
+        * attributes outputted by the vertex shader are interpolated across the fragments
+        */
+        VkPipelineRasterizationStateCreateInfo rasterizer{};
+        rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+        rasterizer.depthClampEnable = VK_FALSE;
+        rasterizer.rasterizerDiscardEnable = VK_FALSE;
+        rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+        rasterizer.lineWidth = 1.0f;
+        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.frontFace = VK_FRONT_FACE_CLOCKWISE;
+        rasterizer.depthBiasEnable = VK_FALSE;
+
+        //TODO(vegasword): Multisampling chapter
+        VkPipelineMultisampleStateCreateInfo multisampling{};
+        multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+        multisampling.sampleShadingEnable = VK_FALSE;
+        multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+        /*
+        * The color blending stage applies operations to mix different 
+        * fragments that map to the same pixel in the framebuffer.
+        * Fragments can simply overwrite each other, add up or be mixed based 
+        * upon transparency.
+        */
+        VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+        colorBlendAttachment.colorWriteMask = 
+            VK_COLOR_COMPONENT_R_BIT | 
+            VK_COLOR_COMPONENT_G_BIT | 
+            VK_COLOR_COMPONENT_B_BIT | 
+            VK_COLOR_COMPONENT_A_BIT;
+        colorBlendAttachment.blendEnable = VK_FALSE;
+
+        VkPipelineColorBlendStateCreateInfo colorBlending{};
+        colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+        colorBlending.logicOpEnable = VK_FALSE;
+        colorBlending.logicOp = VK_LOGIC_OP_COPY;
+        colorBlending.attachmentCount = 1;
+        colorBlending.pAttachments = &colorBlendAttachment;
+        colorBlending.blendConstants[0] = 0.0f;
+        colorBlending.blendConstants[1] = 0.0f;
+        colorBlending.blendConstants[2] = 0.0f;
+        colorBlending.blendConstants[3] = 0.0f;
+
+        // Dynamic states keep properties like viewport size, line width or 
+        // blend constants dynamic. Any specified values bellow will be 
+        // editable at drawing time.
+        std::vector<VkDynamicState> dynamicStates =
+        {
+            VK_DYNAMIC_STATE_VIEWPORT,
+            VK_DYNAMIC_STATE_SCISSOR
+        };
+        VkPipelineDynamicStateCreateInfo dynamicState{};
+        dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+        dynamicState.dynamicStateCount = static_cast<u32>(dynamicStates.size());
+        dynamicState.pDynamicStates = dynamicStates.data();
+
+        //TODO(vegasword): Pass uniform values in shaders (Buffers chapters)
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+        pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        pipelineLayoutInfo.setLayoutCount = 0;
+        pipelineLayoutInfo.pushConstantRangeCount = 0;
+
+        if (vkCreatePipelineLayout(logicalDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create pipeline layout!");
+
+        // We bind shader stages, fixed-function, pipeline layout and the 
+        // render pass to the graphics pipeline.
+        VkGraphicsPipelineCreateInfo pipelineInfo{};
+        pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+        pipelineInfo.stageCount = 2;
+        pipelineInfo.pStages = shaderStages;
+        pipelineInfo.pVertexInputState = &vertexInputInfo;
+        pipelineInfo.pInputAssemblyState = &inputAssembly;
+        pipelineInfo.pViewportState = &viewportState;
+        pipelineInfo.pRasterizationState = &rasterizer;
+        pipelineInfo.pMultisampleState = &multisampling;
+        pipelineInfo.pDepthStencilState = nullptr; // Optional
+        pipelineInfo.pColorBlendState = &colorBlending;
+        pipelineInfo.pDynamicState = &dynamicState;
+        pipelineInfo.layout = pipelineLayout;
+        pipelineInfo.renderPass = renderPass;
+        pipelineInfo.subpass = 0;
+        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
+        pipelineInfo.basePipelineIndex = -1; // Optional
+
+        if (vkCreateGraphicsPipelines(logicalDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create graphics pipeline");
+
+        vkDestroyShaderModule(logicalDevice, vertShaderModule, nullptr);
+        vkDestroyShaderModule(logicalDevice, fragShaderModule, nullptr);
+    }
+
+    void createRenderPass()
+    {
+        /*
+        * The loadOp and storeOp determine what to do with the swap chain images 
+        * data in the attachment before rendering and after rendering. 
+        * We have the following choices for loadOp and storeOp:
+        *   VK_ATTACHMENT_LOAD_OP_LOAD: Preserve the existing contents of the attachment
+        *   VK_ATTACHMENT_LOAD_OP_CLEAR: Clear the values to a constant at the start
+        *   VK_ATTACHMENT_LOAD_OP_DONT_CARE: Existing contents are undefined; we don't care about them
+        *   VK_ATTACHMENT_STORE_OP_STORE: Rendered contents will be stored in memory and can be read later
+        *   VK_ATTACHMENT_STORE_OP_DONT_CARE: Contents of the framebuffer will be undefined after the rendering operation
+        */
+        VkAttachmentDescription colorAttachment{};
+        colorAttachment.format = swapChainImageFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+
+        /*
+        * Textures and framebuffers in Vulkan are represented by VkImage objects 
+        * with a certain pixel format, however the layout of the pixels in memory 
+        * can change based on what you're trying to do with an image.
+        * Some of the most common layouts are:
+        *   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL: Images used as color attachment
+        *   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR: Images to be presented in the swap chain
+        *   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL: Images to be used as destination for a memory copy operation
+        */
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        /*
+        * A single render pass can consist of multiple subpasses. 
+        * Subpasses are subsequent rendering operations that depend on the contents
+        * of framebuffers in previous passes, for example a sequence of post-processing
+        * effects that are applied one after another.
+        * If you group these rendering operations into one render pass, then Vulkan is 
+        * able to reorder the operations and conserve memory bandwidth for possibly better performance.
+        * Every subpass references one or more of the attachments.
+        */
+        VkAttachmentReference colorAttachmentRef{};
+        colorAttachmentRef.attachment = 0;
+        colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        VkRenderPassCreateInfo renderPassInfo{};
+
+        renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+        renderPassInfo.attachmentCount = 1;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1;
+        renderPassInfo.pSubpasses = &subpass;
+
+        if (vkCreateRenderPass(logicalDevice, &renderPassInfo, nullptr, &renderPass) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create render pass");
+    }
+
     void initVulkan()
     {
         /*
@@ -531,6 +754,16 @@ private:
         * any mipmapping levels.
         */
         createImageViews();
+
+        // The render pass is an object specifying how images data are managed by the GPU
+        createRenderPass();
+
+        /*
+        * The graphics pipeline is the sequence of operations that take the
+        * vertices and textures of your meshes all the way to the pixels in
+        * the render targets. (https://vulkan-tutorial.com/images/vulkan_simplified_pipeline.svg)
+        */
+        createGraphicsPipeline();
     }
 
     void mainLoop()
@@ -543,6 +776,8 @@ private:
 
     void cleanup()
     {
+        vkDestroyPipeline(logicalDevice, graphicsPipeline, nullptr);
+        vkDestroyPipelineLayout(logicalDevice, pipelineLayout, nullptr);
         for (auto imageView : swapChainImageViews)
             vkDestroyImageView(logicalDevice, imageView, nullptr);
         vkDestroySwapchainKHR(logicalDevice, swapChain, nullptr);

@@ -159,11 +159,15 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="include\inlined_math.hpp" />
-    <ClInclude Include="include\vulkan_callbacks.hpp" />
+    <ClInclude Include="include\my_math.hpp" />
+    <ClInclude Include="include\my_utils.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="src\main.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="data\shader.frag" />
+    <None Include="data\shader.vert" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
