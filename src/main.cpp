@@ -83,7 +83,7 @@ private:
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.pEngineName = "Vulkan Template";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.apiVersion = VK_API_VERSION_1_0;
+        appInfo.apiVersion = VK_API_VERSION_1_3;
 
         /* (Instance / VkInstanceCreateInfo)
          * Tells Vulkan driver which global extensions and validation layers
@@ -224,7 +224,6 @@ private:
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &surfaceFormatCount, nullptr);
             supportedSurfaceFormats.resize(surfaceFormatCount);
             vkGetPhysicalDeviceSurfaceFormatsKHR(device, surface, &surfaceFormatCount, supportedSurfaceFormats.data());
-
             u32 presentModeCount = 0;
             vkGetPhysicalDeviceSurfacePresentModesKHR(device, surface, &presentModeCount, nullptr);
             supportedPresentModes.resize(presentModeCount);
@@ -318,7 +317,7 @@ private:
         VkSurfaceFormatKHR surfaceFormat{};
         for (const auto& availableFormat : supportedSurfaceFormats)
         {
-            if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            if (availableFormat.format == VK_FORMAT_B8G8R8A8_UNORM/*VK_FORMAT_B8G8R8A8_SRGB*/ &&
                 availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             {
                 surfaceFormat = availableFormat;
