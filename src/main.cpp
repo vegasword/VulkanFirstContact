@@ -309,7 +309,7 @@ private:
     void createSwapChain()
     {
         /*
-        * Surface Format entry contains a format and a colorspace memeber.
+        * Surface Format entry contains a format and a colorspace member.
         * The format member specifies the color channels and types.
         * The colorSpace member indcates if the SRGB color space is supported.
         * NOTE: For the color space we'll use SRGB if it is available, because
@@ -635,14 +635,14 @@ private:
         pipelineInfo.pViewportState = &viewportState;
         pipelineInfo.pRasterizationState = &rasterizer;
         pipelineInfo.pMultisampleState = &multisampling;
-        pipelineInfo.pDepthStencilState = nullptr; // Optional
+        pipelineInfo.pDepthStencilState = nullptr;
         pipelineInfo.pColorBlendState = &colorBlending;
         pipelineInfo.pDynamicState = &dynamicState;
         pipelineInfo.layout = pipelineLayout;
         pipelineInfo.renderPass = renderPass;
         pipelineInfo.subpass = 0;
-        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE; // Optional
-        pipelineInfo.basePipelineIndex = -1; // Optional
+        pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
+        pipelineInfo.basePipelineIndex = -1;
 
         if (vkCreateGraphicsPipelines(logicalDevice, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &graphicsPipeline) != VK_SUCCESS)
             throw std::runtime_error("Failed to create graphics pipeline");
