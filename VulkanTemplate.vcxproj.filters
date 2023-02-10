@@ -28,10 +28,10 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <None Include="data\shader.frag">
+    <None Include="data\shaders\fragment_shader.frag">
       <Filter>Fichiers de ressources</Filter>
     </None>
-    <None Include="data\shader.vert">
+    <None Include="data\shaders\vertex_shader.vert">
       <Filter>Fichiers de ressources</Filter>
     </None>
   </ItemGroup>
