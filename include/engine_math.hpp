@@ -1,9 +1,8 @@
 #pragma once
 
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
-
-#include <stdint.h>
-#include <array>
+#include <glm/gtc/matrix_transform.hpp>
 
 using namespace glm;
 
@@ -38,6 +37,13 @@ typedef struct Vertex
 		return attributeDescriptions;
 	}
 } Vertex;
+
+typedef struct UniformBufferObject
+{
+	glm::mat4 model;
+	glm::mat4 view;
+	glm::mat4 proj;
+} UBO;
 
 static inline uint32_t Clamp(uint32_t input, uint32_t low, uint32_t high)
 {
