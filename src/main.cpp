@@ -114,6 +114,7 @@ class Application
         glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
         glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
         window = glfwCreateWindow(800, 600, "Vulkan", nullptr, nullptr);
+        glfwMaximizeWindow(window);
     }
     
     void createInstance()
@@ -300,7 +301,7 @@ class Application
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
         
         // Check devices suitability
-        for (const auto& device : devices)
+        for (const VkPhysicalDevice& device : devices)
         {
             if (isPhysicalDeviceSuitable(device))
             {
@@ -364,7 +365,7 @@ class Application
         *       it results in more accurate perceived colors.
         */
         VkSurfaceFormatKHR surfaceFormat{};
-        for (const auto& availableFormat : supportedSurfaceFormats)
+        for (const VkSurfaceFormatKHR& availableFormat : supportedSurfaceFormats)
         {
             if (availableFormat.format == VK_FORMAT_B8G8R8A8_SRGB &&
                 availableFormat.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
@@ -398,7 +399,7 @@ class Application
         *   avoiding tearing, resulting in fewer latency, commonly know as "triple buffering".
         */
         VkPresentModeKHR presentMode{};
-        for (const auto& availablePresentMode : supportedPresentModes)
+        for (const VkPresentModeKHR& availablePresentMode : supportedPresentModes)
         {
             // We check if MAILBOX is available, because that mode is 
             // the best trade-off if energy usage is not a concern.
@@ -559,8 +560,8 @@ class Application
     
     void createGraphicsPipeline()
     {
-        auto vertShaderCode = readFile("data/shaders/vertex_shader.spv");
-        auto fragShaderCode = readFile("data/shaders/fragment_shader.spv");
+        std::vector<char> vertShaderCode = readFile("data/shaders/vertex_shader.spv");
+        std::vector<char> fragShaderCode = readFile("data/shaders/fragment_shader.spv");
         
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
@@ -583,8 +584,8 @@ class Application
         VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
         vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
         
-        auto bindingDescription = Vertex::getBindingDescription();
-        auto attributeDescriptions = Vertex::getAttributeDescriptions();
+        VkVertexInputBindingDescription bindingDescription = Vertex::getBindingDescription();
+        std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions = Vertex::getAttributeDescriptions();
         
         vertexInputInfo.vertexBindingDescriptionCount = 1;
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributeDescriptions.size());
@@ -624,7 +625,7 @@ class Application
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode = VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode =  0; //VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
         
@@ -1466,8 +1467,9 @@ class Application
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
         UniformBufferObject ubo{};
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 10.0f));
-        ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        float cameraDist = 1.f, rotatoSpeed = 2.f;
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * rotatoSpeed * glm::radians(90.0f), glm::vec3(-2.5f, -1.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(cameraDist, cameraDist, cameraDist), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
         
         /*
@@ -1623,7 +1625,7 @@ class Application
 
 static void framebufferResizeCallback(GLFWwindow* window, int width, int height)
 {
-    auto app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
+    Application* app = reinterpret_cast<Application*>(glfwGetWindowUserPointer(window));
     app->framebufferResized = true;
 }
 
