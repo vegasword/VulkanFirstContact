@@ -1,11 +1,14 @@
 #define VK_USE_PLATFORM_WIN32_KHR
-#include <vulkan/vulkan.h>
 #define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 #define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
 #define STB_IMAGE_IMPLEMENTATION
+#define TINYOBJLOADER_IMPLEMENTATION
+
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 #include <stb-master/stb_image.h>
+#include <tiny_obj_loader.h>
 
 #include <iostream>
 #include <stdexcept>
@@ -13,6 +16,7 @@
 #include <cstdint>
 #include <vector>
 #include <set>
+#include <unordered_map>
 #include <array>
 #include <chrono>
 
@@ -51,15 +55,6 @@ class Application
     GLFWwindow* window;
     VkSurfaceKHR surface;
     
-    // Basic buffering
-    VkBuffer vertexBuffer;
-    VkDeviceMemory vertexBufferMemory;
-    VkBuffer indexBuffer;
-    VkDeviceMemory indexBufferMemory;
-    std::vector<VkBuffer> uniformBuffers;
-    std::vector<VkDeviceMemory> uniformBuffersMemory;
-    std::vector<void*> uniformBuffersMapped;
-    
     // Depth buffering
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
@@ -73,25 +68,18 @@ class Application
     VkImageView textureImageView;
     VkSampler textureSampler;
     
-    // TMP buffers
-    const std::vector<Vertex> vertices = 
-    {
-        {{-0.5f, -0.5f, 673216.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-        
-        {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
-        {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
-        {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
-        {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}
-    };
+    // Model Buffers
+    std::vector<Vertex> vertices;
+    VkBuffer vertexBuffer;
+    VkDeviceMemory vertexBufferMemory;
     
-    const std::vector<u16> indices = 
-    {
-        0, 1, 2, 2, 3, 0,
-        4, 5, 6, 6, 7, 4
-    };
+    std::vector<u32> indices;
+    VkBuffer indexBuffer;
+    VkDeviceMemory indexBufferMemory;
+    
+    std::vector<VkBuffer> uniformBuffers;
+    std::vector<VkDeviceMemory> uniformBuffersMemory;
+    std::vector<void*> uniformBuffersMapped;
     
     // Swap Chain
     VkSurfaceCapabilitiesKHR supportedSurfaceCapabilities;
@@ -133,50 +121,24 @@ class Application
     
     void createInstance()
     {
-        // Temporary redundant variables
         u32 counter = 0;
         
-        // Metadata of the application (mostly use by the driver for config).
         appInfo.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
-        appInfo.pApplicationName = "Vulkan Template";
+        appInfo.pApplicationName = "Rotato potato";
         appInfo.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
-        appInfo.pEngineName = "Vulkan Template";
+        appInfo.pEngineName = "Rotato potato";
         appInfo.engineVersion = VK_MAKE_VERSION(1, 0, 0);
         appInfo.apiVersion = VK_API_VERSION_1_3;
         
-        /* (Instance / VkInstanceCreateInfo)
-         * Tells Vulkan driver which global extensions and validation layers
-         * we want to use.
-         *
-         * Global extensions are a set of additional Vulkan features.
-         *
-         * Validation layers are optional components that hook into Vulkan
-         * function calls to apply additional operations like checking the
-         * values of parameters against the specification to detect misuse or
-         * the thread safety...
-         * There are two different types of validation layers:
-         * - Instance layers only checking calls related to global Vulkan
-         *   objects like instances
-         * - Device specific layers checking only calls related to a specific
-         *   GPU.
-         *
-         *  Even if device specific layers have now been deprecated, it still
-         *  recommended to enable validation layers at devices level as well
-         *  for compatibility, which is required by some implementations.
-        */
         VkInstanceCreateInfo createInfo{};
         createInfo.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
         createInfo.pApplicationInfo = &appInfo;
         
-        // Get and count the available extensions from the Vulkan instance
-        // NOTE: To get the number of enumerated properties we can leave
-        // blank the properties parameter in the  call (last parameter).
         u32 availableExtensionsCount = 0;
         vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(availableExtensionsCount);
         vkEnumerateInstanceExtensionProperties(nullptr, &availableExtensionsCount, availableExtensions.data());
         
-        // Check if the required extensions are supported
         u32 glfwExtensionCount = 0;
         const char** glfwExtensions;
         glfwExtensions = glfwGetRequiredInstanceExtensions(&glfwExtensionCount);
@@ -193,7 +155,6 @@ class Application
             throw std::runtime_error("An extension is not supported");
         
         
-        // Enable extensions
         createInfo.enabledExtensionCount = extensionsCount;
         createInfo.ppEnabledExtensionNames = extensions.data();
         
@@ -202,7 +163,6 @@ class Application
         createInfo.enabledLayerCount = 0;
         createInfo.pNext = nullptr;
         
-        // We finally create the Vulkan instance
         if (vkCreateInstance(&createInfo, nullptr, &instance) != VK_SUCCESS)
             throw std::runtime_error("Failed to create Vulkan instance");
     }
@@ -220,29 +180,18 @@ class Application
     
     bool isPhysicalDeviceSuitable(VkPhysicalDevice device)
     {
-        // Get physical device hardware properties and Vulkan compatibility
         VkPhysicalDeviceProperties deviceProperties;
         vkGetPhysicalDeviceProperties(device, &deviceProperties);
         
-        // I want to choose a Vulkan compatible GPU and not an integrated one
         bool validProperties =
             deviceProperties.apiVersion >= appInfo.apiVersion &&
             deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU;
         
-        // Get the optional features and shaders compatibilities
         VkPhysicalDeviceFeatures deviceFeatures;
         vkGetPhysicalDeviceFeatures(device, &deviceFeatures);
         deviceFeatures.samplerAnisotropy = VK_TRUE;
         bool requiredFeatures = deviceFeatures.geometryShader;
         
-        /* (About queue families)
-        * Every operation in Vulkan, anything from drawing to uploading textures, 
-        * requires commands to be submitted to a queue. 
-        * There are different types of queues that originate from different queue
-        * families and each family of queues allows only a subset of commands.
-        */ 
-        
-        // Check supported queue families by the physical device
         u32 queueFamilyCount = 0;
         vkGetPhysicalDeviceQueueFamilyProperties(device, &queueFamilyCount, nullptr);
         std::vector<VkQueueFamilyProperties> queueFamilies(queueFamilyCount);
@@ -261,7 +210,6 @@ class Application
             break;
         }
         
-        // Check supported device extensions
         u32 availableExtensionCount;
         vkEnumerateDeviceExtensionProperties(device, nullptr, &availableExtensionCount, nullptr);
         std::vector<VkExtensionProperties> availableExtensions(availableExtensionCount);
@@ -274,7 +222,6 @@ class Application
             counter++;
         bool extensionsSupported = (counter == extensionCount);
         
-        // Check swap chain support
         bool swapChainAdequate = false;
         if (extensionsSupported)
         {
@@ -306,7 +253,6 @@ class Application
     
     void pickPhysicalDevice()
     {       
-        // Listing the GPUs
         u32 deviceCount = 0;
         vkEnumeratePhysicalDevices(instance, &deviceCount, nullptr);
         if (deviceCount <= 0)
@@ -314,7 +260,6 @@ class Application
         std::vector<VkPhysicalDevice> devices(deviceCount);
         vkEnumeratePhysicalDevices(instance, &deviceCount, devices.data());
         
-        // Check devices suitability
         for (const VkPhysicalDevice& device : devices)
         {
             if (isPhysicalDeviceSuitable(device))
@@ -334,10 +279,6 @@ class Application
         std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
         std::set<u32> uniqueQueueFamilies = { graphicsFamily, presentFamily };
         
-        /* (About queue parallelization)
-        * We can assign priorities to queues to influence the scheduling of 
-        * command buffer execution using floating point numbers between 0.0 and 1.0.
-        */
         float queuePriority = 1.0f;
         queueCreateInfo.pQueuePriorities = &queuePriority;
         
@@ -371,13 +312,6 @@ class Application
     
     void createSwapChain()
     {
-        /*
-        * Surface Format entry contains a format and a colorspace member.
-        * The format member specifies the color channels and types.
-        * The colorSpace member indcates if the SRGB color space is supported.
-        * NOTE: For the color space we'll use SRGB if it is available, because
-        *       it results in more accurate perceived colors.
-        */
         VkSurfaceFormatKHR surfaceFormat{};
         for (const VkSurfaceFormatKHR& availableFormat : supportedSurfaceFormats)
         {
@@ -391,49 +325,18 @@ class Application
         if (surfaceFormat.format == VK_FORMAT_UNDEFINED)
             surfaceFormat = supportedSurfaceFormats[0];
         
-        /*
-        * Presentation mode is arguably the most important setting for the
-        * swap chain, because it represents the actual conditions for showing
-        * images to the screen. There are four possible modes available in Vulkan:
-        * 
-        * - IMMEDIATE: Images are transfered to the screen directly, which may
-        *   result in tearing.
-        * 
-        * - FIFO: Similar to vertical sync, it takes an image from the front of
-        *   the queue when the display is refreshed and insert rendered images at the back.
-        *   The moment that the display is refreshed is known as "vertical blank".
-        * 
-        * - FIFO_RELAXED: If the application is late and the queue was empty,
-        *   instead of waiting for the next vertical blank, the image is trasferred
-        *   right away when it finally arrives. This may result in visible tearing.
-        * 
-        * - MAILBOX: Instead of blocking the application when the queue is full,
-        *   the image that are already queued are simply replaced with the newer ones.
-        *   This mode can be used to render frames as fast as possible while still 
-        *   avoiding tearing, resulting in fewer latency, commonly know as "triple buffering".
-        */
         VkPresentModeKHR presentMode{};
         for (const VkPresentModeKHR& availablePresentMode : supportedPresentModes)
         {
-            // We check if MAILBOX is available, because that mode is 
-            // the best trade-off if energy usage is not a concern.
             if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR)
             {
                 presentMode = availablePresentMode;
                 break;
             }
         }
-        // Otherwise we choose the FIFO mode where energy usage is important
         if (presentMode != VK_PRESENT_MODE_MAILBOX_KHR)
             presentMode = VK_PRESENT_MODE_FIFO_KHR;
         
-        /*
-        * Swap extent is the resolution of the swap chain images and it's almost
-        * exactly equal to the resolution of the window that we're drawing in pixels.
-        * In some cases, due to high pixel density on a device, the resolution
-        * of the window in pixel will be largen than the resolution in screen
-        * coordinates.
-        */
         VkExtent2D swapExtent{};
         if (supportedSurfaceCapabilities.currentExtent.width != 0xffffffff)
         {
@@ -451,13 +354,10 @@ class Application
                                      supportedSurfaceCapabilities.maxImageExtent.height);
         }
         
-        // We decide how many images we could like to have in the swap chain
         u32 imageCount = supportedSurfaceCapabilities.minImageCount + 1;
         if (supportedSurfaceCapabilities.maxImageCount > 0 &&
             imageCount > supportedSurfaceCapabilities.maxImageCount)
         {
-            // It's recommended to request one more image to avoid delay cause by 
-            // driver internal operations
             imageCount = supportedSurfaceCapabilities.maxImageCount + 1;
         }
         
@@ -469,24 +369,9 @@ class Application
         createInfo.imageColorSpace = surfaceFormat.colorSpace;
         createInfo.imageExtent = swapExtent;
         
-        /*
-        * The imageArrayLayers specifies the amount of layers each image consists of.
-        * This is always 1 unless you are developing a stereoscopic 3D application.
-        * The imageUsage bit field specifies what kind of operations we'll use
-        * the images in the swap chain for.
-        */
         createInfo.imageArrayLayers = 1;
         createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
         
-        /*
-        * We need to specify how to handle swap chain images that will be used 
-        * across multiple queue families.
-        * There are two ways to handle images that are accessed from multiple queues:
-        * - EXCLUSIVE: An image is owned by one queue family at a time and ownership
-        *   must be explicitly transferred before using it in another queue family.
-        * - CONCURRENT: Images can be used across multiple queue families without
-        *   explicit ownership transfers.
-        */
         if (graphicsFamily != presentFamily)
         {
             createInfo.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
@@ -499,18 +384,14 @@ class Application
             createInfo.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         }
         
-        // We can specify that a certain transform should be applied to images in
-        // the swap chain, like clockwise rotation or horizontal flip.
         if (supportedSurfaceCapabilities.supportedTransforms)
             createInfo.preTransform = supportedSurfaceCapabilities.currentTransform;
         
-        // The compositeAlpha field specifies if the alpha channel should be used for
-        // blending with other windows in the window system.
         if (supportedSurfaceCapabilities.supportedCompositeAlpha)
             createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
         
         createInfo.presentMode = presentMode;
-        createInfo.clipped = VK_TRUE; // Does not care about pixels obstructed by overlapping windows
+        createInfo.clipped = VK_TRUE;
         createInfo.oldSwapchain = VK_NULL_HANDLE;
         
         if (vkCreateSwapchainKHR(logicalDevice, &createInfo, nullptr, &swapChain) != VK_SUCCESS)
@@ -528,7 +409,7 @@ class Application
     {
         swapChainImageViews.resize(swapChainImages.size());
         
-        for (uint32_t i = 0; i < swapChainImages.size(); i++)
+        for (u32 i = 0; i < swapChainImages.size(); i++)
             swapChainImageViews[i] = createImageView(swapChainImages[i], swapChainImageFormat, VK_IMAGE_ASPECT_COLOR_BIT);
     }
     
@@ -539,7 +420,6 @@ class Application
         createInfo.codeSize = code.size();
         createInfo.pCode = reinterpret_cast<const u32*>(code.data());
         
-        // The shader module is an object wrapping shader code.
         VkShaderModule shaderModule;
         if (vkCreateShaderModule(logicalDevice, &createInfo, nullptr, &shaderModule) != VK_SUCCESS)
             throw std::runtime_error("Failed to create shader module");
@@ -580,7 +460,6 @@ class Application
         VkShaderModule vertShaderModule = createShaderModule(vertShaderCode);
         VkShaderModule fragShaderModule = createShaderModule(fragShaderCode);
         
-        // Assign the vertex and fragment shader to its pipeline stage
         VkPipelineShaderStageCreateInfo vertShaderStageInfo{};
         vertShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vertShaderStageInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
@@ -606,40 +485,23 @@ class Application
         vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
         vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
         
-        /*
-        * The input assembler collects the raw vertex data from the buffers you
-        * specify and may also use an index buffer to repeat certain elements
-        * without having to duplicate the vertex data itself.
-        */
         VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
         inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
         inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         inputAssembly.primitiveRestartEnable = VK_FALSE;
         
-        /*
-        * A viewport basically describes the region of the framebuffer that the 
-        * output will be rendered to. While viewports define the transformation 
-        * from the image to the framebuffer, scissor rectangles define in which 
-        * regions pixels will actually be stored.
-        */
         VkPipelineViewportStateCreateInfo viewportState{};
         viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
         viewportState.viewportCount = 1;
         viewportState.scissorCount = 1;
         
-        /*
-        * The rasterization stage discretizes the primitives into fragments. 
-        * These are the pixel elements that they fill on the framebuffer.
-        * Any fragments that fall outside the screen are discarded and the 
-        * attributes outputted by the vertex shader are interpolated across the fragments
-        */
         VkPipelineRasterizationStateCreateInfo rasterizer{};
         rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
         rasterizer.depthClampEnable = VK_FALSE;
         rasterizer.rasterizerDiscardEnable = VK_FALSE;
         rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
         rasterizer.lineWidth = 1.0f;
-        rasterizer.cullMode =  0; //VK_CULL_MODE_BACK_BIT;
+        rasterizer.cullMode =  VK_CULL_MODE_BACK_BIT;
         rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         rasterizer.depthBiasEnable = VK_FALSE;
         
@@ -656,12 +518,6 @@ class Application
         depthStencil.depthBoundsTestEnable = VK_FALSE;
         depthStencil.stencilTestEnable = VK_FALSE;
         
-        /*
-        * The color blending stage applies operations to mix different 
-        * fragments that map to the same pixel in the framebuffer.
-        * Fragments can simply overwrite each other, add up or be mixed based 
-        * upon transparency.
-        */
         VkPipelineColorBlendAttachmentState colorBlendAttachment{};
         colorBlendAttachment.colorWriteMask = 
             VK_COLOR_COMPONENT_R_BIT | 
@@ -681,9 +537,6 @@ class Application
         colorBlending.blendConstants[2] = 0.0f;
         colorBlending.blendConstants[3] = 0.0f;
         
-        // Dynamic states keep properties like viewport size, line width or 
-        // blend constants dynamic. Any specified values bellow will be 
-        // editable at drawing time.
         std::vector<VkDynamicState> dynamicStates =
         {
             VK_DYNAMIC_STATE_VIEWPORT,
@@ -702,8 +555,6 @@ class Application
         if (vkCreatePipelineLayout(logicalDevice, &pipelineLayoutInfo, nullptr, &pipelineLayout) != VK_SUCCESS)
             throw std::runtime_error("Failed to create pipeline layout!");
         
-        // We bind shader stages, fixed-function, pipeline layout and the 
-        // render pass to the graphics pipeline.
         VkGraphicsPipelineCreateInfo pipelineInfo{};
         pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
         pipelineInfo.stageCount = 2;
@@ -746,7 +597,7 @@ class Application
             }
         }
         
-        throw std::runtime_error("failed to find supported format!");
+        throw std::runtime_error("Failed to find supported format");
     }
     
     VkFormat findDepthFormat() 
@@ -810,7 +661,7 @@ class Application
         std::array<VkAttachmentDescription, 2> attachments = {colorAttachment, depthAttachment};
         VkRenderPassCreateInfo renderPassInfo{};
         renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        renderPassInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+        renderPassInfo.attachmentCount = static_cast<u32>(attachments.size());
         renderPassInfo.pAttachments = attachments.data();
         renderPassInfo.subpassCount = 1;
         renderPassInfo.pSubpasses = &subpass;
@@ -825,7 +676,6 @@ class Application
     {
         swapChainFramebuffers.resize(swapChainImageViews.size());
         
-        // We iterate through the image views and create framebuffers from them
         for (size_t i = 0; i < swapChainImageViews.size(); i++)
         {
             std::array<VkImageView, 2> attachments =
@@ -837,14 +687,14 @@ class Application
             VkFramebufferCreateInfo framebufferInfo{};
             framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebufferInfo.renderPass = renderPass;
-            framebufferInfo.attachmentCount = static_cast<uint32_t>(attachments.size());
+            framebufferInfo.attachmentCount = static_cast<u32>(attachments.size());
             framebufferInfo.pAttachments = attachments.data();
             framebufferInfo.width = swapChainExtent.width;
             framebufferInfo.height = swapChainExtent.height;
             framebufferInfo.layers = 1;
             
             if (vkCreateFramebuffer(logicalDevice, &framebufferInfo, nullptr, &swapChainFramebuffers[i]) != VK_SUCCESS)
-                throw std::runtime_error("failed to create framebuffer!");
+                throw std::runtime_error("Failed to create framebuffer");
         }
         
     }
@@ -857,7 +707,7 @@ class Application
         poolInfo.queueFamilyIndex = graphicsFamily;
         
         if (vkCreateCommandPool(logicalDevice, &poolInfo, nullptr, &commandPool) != VK_SUCCESS)
-            throw std::runtime_error("failed to create command pool!");
+            throw std::runtime_error("Failed to create command pool");
     }
     
     void createDepthResources()
@@ -866,7 +716,6 @@ class Application
         
         createImage(swapChainExtent.width, swapChainExtent.height, depthFormat, VK_IMAGE_TILING_OPTIMAL, VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, depthImage, depthImageMemory);
         depthImageView = createImageView(depthImage, depthFormat, VK_IMAGE_ASPECT_DEPTH_BIT);
-        transitionImageLayout(depthImage, depthFormat, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL);
     }
     
     void recordCommandBuffer(VkCommandBuffer commandBuffer, u32 imageIndex)
@@ -890,7 +739,7 @@ class Application
         clearValues[0].color = {{0.0f, 0.0f, 0.0f, 1.0f}};
         clearValues[1].depthStencil = {1.0f, 0};
         
-        renderPassInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
         renderPassInfo.pClearValues = clearValues.data();;
         
         vkCmdBeginRenderPass(commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
@@ -914,7 +763,7 @@ class Application
         VkBuffer vertexBuffers[] = { vertexBuffer };
         VkDeviceSize offsets[] = { 0 };
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT16);
+        vkCmdBindIndexBuffer(commandBuffer, indexBuffer, 0, VK_INDEX_TYPE_UINT32);
         vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipelineLayout, 0, 1, &descriptorSets[currentFrame], 0, nullptr);
         
         vkCmdDrawIndexed(commandBuffer, static_cast<u32>(indices.size()), 1, 0, 0, 0);
@@ -927,12 +776,6 @@ class Application
     
     u32 findMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties)
     {
-        /*
-        * The VkPhysicalDeviceMemoryProperties structure has two arrays
-        * memoryTypes and memoryHeaps. Memory heaps are distinct memory
-        * resources like dedicated VRAM and swap space in RAM for when
-        * VRAM runs out. The different types of memory exist within these heaps.
-        */
         VkPhysicalDeviceMemoryProperties memProperties;
         vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
         
@@ -1035,7 +878,20 @@ class Application
         VkPipelineStageFlags sourceStage;
         VkPipelineStageFlags destinationStage;
         
-        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
+        if (newLayout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+        {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+            
+            if (hasStencilComponent(format))
+                barrier.subresourceRange.aspectMask |= VK_IMAGE_ASPECT_STENCIL_BIT;
+        }
+        else 
+        {
+            barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        }
+        
+        if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && 
+            newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) 
         {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -1043,7 +899,9 @@ class Application
             sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
             destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
         } 
-        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL &&
+                 newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             
@@ -1055,7 +913,7 @@ class Application
             throw std::invalid_argument("Unsupported layout transition");
         }
         
-        vkCmdPipelineBarrier(commandBuffer,sourceStage, destinationStage,0,0, nullptr,0, nullptr,1, &barrier);
+        vkCmdPipelineBarrier(commandBuffer,sourceStage, destinationStage,0, 0, nullptr, 0, nullptr, 1, &barrier);
         
         endSingleTimeCommands(commandBuffer);
     }
@@ -1102,9 +960,8 @@ class Application
         imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
         imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         
-        if (vkCreateImage(logicalDevice, &imageInfo, nullptr, &image) != VK_SUCCESS) {
-            throw std::runtime_error("failed to create image!");
-        }
+        if (vkCreateImage(logicalDevice, &imageInfo, nullptr, &image) != VK_SUCCESS)
+            throw std::runtime_error("Failed to create image");
         
         VkMemoryRequirements memRequirements;
         vkGetImageMemoryRequirements(logicalDevice, image, &memRequirements);
@@ -1200,14 +1057,58 @@ class Application
         samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
         
         if (vkCreateSampler(logicalDevice, &samplerInfo, nullptr, &textureSampler) != VK_SUCCESS)
-            throw std::runtime_error("failed to create texture sampler!");
+            throw std::runtime_error("Failed to create texture sampler");
     }
+    
+    void loadModel(const char* path)
+    {
+        tinyobj::attrib_t attrib;
+        std::vector<tinyobj::shape_t> shapes;
+        std::vector<tinyobj::material_t> materials;
+        std::string warn, err;
+        
+        if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, path))
+            throw std::runtime_error(warn + err);
+        
+        std::unordered_map<Vertex, u32> uniqueVertices{};
+        
+        for (const auto& shape : shapes) 
+        {
+            for (const auto& index : shape.mesh.indices) 
+            {
+                Vertex vertex{};
+                
+                vertex.pos = 
+                {
+                    attrib.vertices[3 * index.vertex_index + 0],
+                    attrib.vertices[3 * index.vertex_index + 1],
+                    attrib.vertices[3 * index.vertex_index + 2]
+                };
+                
+                vertex.texCoord = 
+                {
+                    attrib.texcoords[2 * index.texcoord_index + 0],
+                    1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+                };
+                
+                vertex.color = {1.0f, 1.0f, 1.0f};
+                
+                if (uniqueVertices.count(vertex) == 0) 
+                {
+                    uniqueVertices[vertex] = static_cast<u32>(vertices.size());
+                    vertices.push_back(vertex);
+                }
+                
+                indices.push_back(uniqueVertices[vertex]);
+            }
+        }
+    }
+    
     
     void createVertexBuffer()
     {
         VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
         
-        // We're creating a staging buffer to upload vertex array to the device
         VkBuffer stagingBuffer;
         VkDeviceMemory stagingBufferMemory;
         createBuffer(bufferSize, 
@@ -1221,8 +1122,6 @@ class Application
         memcpy(data, vertices.data(), (size_t)bufferSize);
         vkUnmapMemory(logicalDevice, stagingBufferMemory);
         
-        // Move the vertex data to the device local buffer
-        // using a transfer operation
         createBuffer(bufferSize, 
                      VK_BUFFER_USAGE_TRANSFER_DST_BIT | 
                      VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, 
@@ -1231,8 +1130,6 @@ class Application
         
         copyBuffer(stagingBuffer, vertexBuffer, bufferSize);
         
-        // After copying the data from the staging buffer 
-        // to the device buffer, we should clean it up
         vkDestroyBuffer(logicalDevice, stagingBuffer, nullptr);
         vkFreeMemory(logicalDevice, stagingBufferMemory, nullptr);
     }
@@ -1289,15 +1186,15 @@ class Application
     {
         std::array<VkDescriptorPoolSize, 2> poolSizes{};
         poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        poolSizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolSizes[0].descriptorCount = static_cast<u32>(MAX_FRAMES_IN_FLIGHT);
         poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        poolSizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolSizes[1].descriptorCount = static_cast<u32>(MAX_FRAMES_IN_FLIGHT);
         
         VkDescriptorPoolCreateInfo poolInfo{};
         poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+        poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
         poolInfo.pPoolSizes = poolSizes.data();
-        poolInfo.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        poolInfo.maxSets = static_cast<u32>(MAX_FRAMES_IN_FLIGHT);
         
         if (vkCreateDescriptorPool(logicalDevice, &poolInfo, nullptr, &descriptorPool) != VK_SUCCESS)
             throw std::runtime_error("Failed to create descriptor pool");
@@ -1450,22 +1347,27 @@ class Application
         */
         createGraphicsPipeline();
         
-        /*
-        *  Framebuffers are the combination of all used graphics pipeline buffers
-        *  like the color, depth and stencil buffers for example.
-        */
-        createFramebuffers();
         
         /*
         * Command pools manage the memory that is used to store the buffers and 
         * command buffers are allocated from them. 
         */
         createCommandPool();
+        
+        // Depth buffering
         createDepthResources();
-        createTextureImage("data/textures/fish.png");
+        
+        /*
+        *  Framebuffers are the combination of all used graphics pipeline buffers
+        *  like the color, depth and stencil buffers for example.
+        */
+        createFramebuffers();
+        
+        // Buferring and texturing
+        loadModel("data/potatOS.obj");
+        createTextureImage("data/potatOS.png");
         createTextureImageView();
         createTextureSampler();
-        
         createVertexBuffer();
         createIndexBuffer();
         createUniformBuffers();
@@ -1517,16 +1419,9 @@ class Application
         float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
         
         UniformBufferObject ubo{};
-        float cameraDist = 1.f, rotatoSpeed = 2.f;
-        ubo.model = glm::rotate(glm::mat4(1.0f), time * rotatoSpeed * glm::radians(90.0f), glm::vec3(-2.5f, -1.0f, 1.0f));
-        ubo.view = glm::lookAt(glm::vec3(cameraDist, cameraDist, cameraDist), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10.0f);
-        
-        /*
-        * GLM was originally designed for OpenGL, where the Y coordinate of the clip coordinates is inverted.
-        * The easiest way to compensate for that is to flip the sign on the scaling factor of the Y axis in the 
-        * projection matrix. If we don't do this, then the image will be rendered upside down.
-        */
+        ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(25.0f), glm::vec3(1.0f, -1.0f, 1.0f));
+        ubo.view = glm::lookAt(glm::vec3(20.f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = glm::perspective(glm::radians(45.f), swapChainExtent.width / (float)swapChainExtent.height, 0.1f, 10000.0f);
         ubo.proj[1][1] *= -1;
         
         memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
@@ -1589,8 +1484,6 @@ class Application
         
         vkQueuePresentKHR(presentQueue, &presentInfo);
         
-        // By using the modulo (%) operator, we ensure that the frame index loops
-        // around after every MAX_FRAMES_IN_FLIGHT enqueued frames.
         currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
     
@@ -1599,15 +1492,6 @@ class Application
         while (!glfwWindowShouldClose(window))
         {
             glfwPollEvents();
-            
-            /*
-            * Rendering a frame in Vulkan consists of a common set of steps:
-            *   Wait for the previous frame to finish
-            *   Acquire an image from the swap chain
-            *   Record a command buffer which draws the scene onto that image
-            *   Submit the recorded command buffer
-            *   Present the swap chain image
-            */
             drawFrame();
         }
         vkDeviceWaitIdle(logicalDevice);
@@ -1698,5 +1582,3 @@ int main()
     
     return EXIT_SUCCESS;
 }
-
-//TODO: Create one VkBuffer for vertices and indices (single memory allocation)
